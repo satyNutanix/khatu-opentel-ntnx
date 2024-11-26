@@ -34,11 +34,11 @@ RUN ls -l /
 ENTRYPOINT ["/server"]
 
 # Use the minimal base image for the final image
-FROM gcr.io/distroless/base-debian11
+FROM ubuntu:22.04
 
 # Copy server and client from the builder stage
 COPY --from=builder /app/server /server
 COPY --from=builder /app/client /client
 
 # Set the entrypoint to the server binary
-ENTRYPOINT ["/server"]
+ENTRYPOINT ["/server/main"]
