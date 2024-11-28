@@ -6,6 +6,7 @@ import (
 
   "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
   "go.opentelemetry.io/otel"
+  "go.opentelemetry.io/otel/propagation"
   "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
   "go.opentelemetry.io/otel/sdk/resource"
   "go.opentelemetry.io/otel/sdk/trace"
@@ -18,6 +19,8 @@ import (
 func main() {
   // Setup tracing
   tracerProvider := setupTracing()
+  otel.SetTracerProvider(tracerProvider)
+  otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
   defer tracerProvider.Shutdown(context.Background())
 
   // Connect to the server

@@ -7,7 +7,8 @@ import (
   "net"
 
   "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-  //"go.opentelemetry.io/otel"
+  "go.opentelemetry.io/otel"
+  "go.opentelemetry.io/otel/propagation"
   "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
   "go.opentelemetry.io/otel/sdk/resource"
   sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -32,6 +33,8 @@ func (s *server) SayHello(ctx context.Context, req *pb.HelloRequest) (*pb.HelloR
 func main() {
   // Setup tracing
   tracerProvider := setupTracing()
+  otel.SetTracerProvider(tracerProvider)
+  otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
   defer tracerProvider.Shutdown(context.Background())
 
   listener, err := net.Listen("tcp", ":50051")
