@@ -1,63 +1,57 @@
 package main
 
 import (
-  "context"
-  "fmt"
-  "log"
-  "net"
+	"context"
+	"fmt"
+	"log"
+	"net"
 
-  "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-  "go.opentelemetry.io/otel"
-  "go.opentelemetry.io/otel/propagation"
-  "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
-  "go.opentelemetry.io/otel/sdk/resource"
-  sdktrace "go.opentelemetry.io/otel/sdk/trace"
-  "go.opentelemetry.io/otel/trace"
+	"github.com/nutanix-core/go-cache/util-go/tracer"
+	"google.golang.org/grpc"
 
-  "google.golang.org/grpc"
-
-  pb "shyam-opentel/example"
+	pb "shyam-opentel/example"
 )
 
 type server struct {
-  pb.UnimplementedExampleServiceServer
+	pb.UnimplementedExampleServiceServer
 }
 
 func (s *server) SayHello(ctx context.Context, req *pb.HelloRequest) (*pb.HelloResponse, error) {
-  span := trace.SpanFromContext(ctx)
-  span.AddEvent("Received request in SayHello")
-  log.Printf("TraceID: %s", span.SpanContext().TraceID())
-  return &pb.HelloResponse{Message: fmt.Sprintf("Hello, %s!", req.Name)}, nil
+	span, ctx := tracer.StartRpcServerSpan(nil, "SayHello", ctx)
+	//span.AddEvent("Processing SayHello")
+	span.SetTag("exampleTag2", "exampleValue2")
+	return &pb.HelloResponse{Message: fmt.Sprintf("Hello, %s!", req.Name)}, nil
 }
 
 func main() {
-  // Setup tracing
-  tracerProvider := setupTracing()
-  otel.SetTracerProvider(tracerProvider)
-  otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-  defer tracerProvider.Shutdown(context.Background())
+	closer := tracer.InitTracer("Foundation-Central")
+	if closer != nil {
+		// The tracer needs to be closed before the service stops, this will clear the traces stored in the cache.
+		defer closer.Close()
+	}
 
-  listener, err := net.Listen("tcp", ":50051")
-  if err != nil {
-    log.Fatalf("Failed to listen: %v", err)
+
+  unaryTrace, streamTrace := tracer.GrpcServerTraceOptions()
+  var opts []grpc.ServerOption
+  if unaryTrace != nil {
+      unaryOpt := grpc.UnaryInterceptor(unaryTrace)
+      opts = append(opts, unaryOpt)
   }
-
-  grpcServer := grpc.NewServer(
-    grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
-  )
-
-  pb.RegisterExampleServiceServer(grpcServer, &server{})
-
-  log.Println("gRPC Server running on :50051")
-  if err := grpcServer.Serve(listener); err != nil {
-    log.Fatalf("Failed to serve: %v", err)
+  if streamTrace != nil {
+      streamOpt := grpc.StreamInterceptor(streamTrace)
+      opts = append(opts, streamOpt)
   }
-}
+  grpcServer := grpc.NewServer(opts...)
 
-func setupTracing() *sdktrace.TracerProvider {
-  exporter, _ := stdouttrace.New(stdouttrace.WithPrettyPrint())
-  return sdktrace.NewTracerProvider(
-    sdktrace.WithBatcher(exporter),
-    sdktrace.WithResource(resource.NewSchemaless()),
-  )
+	listener, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatalf("Failed to listen: %v", err)
+	}
+
+	pb.RegisterExampleServiceServer(grpcServer, &server{})
+
+	log.Println("gRPC Server running on :50051")
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Fatalf("Failed to serve: %v", err)
+	}
 }

@@ -1,62 +1,52 @@
 package main
 
 import (
-  "context"
-  "log"
+	"context"
+	"log"
 
-  "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-  "go.opentelemetry.io/otel"
-  "go.opentelemetry.io/otel/propagation"
-  "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
-  "go.opentelemetry.io/otel/sdk/resource"
-  "go.opentelemetry.io/otel/sdk/trace"
+	pb "shyam-opentel/example"
 
-  pb "shyam-opentel/example"
+	"google.golang.org/grpc"
 
-  "google.golang.org/grpc"
+	"github.com/nutanix-core/go-cache/util-go/tracer"
 )
 
 func main() {
-  // Setup tracing
-  tracerProvider := setupTracing()
-  otel.SetTracerProvider(tracerProvider)
-  otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-  defer tracerProvider.Shutdown(context.Background())
+	closer := tracer.InitTracer("Foundation-Central")
+	if closer != nil {
+		// The tracer needs to be closed before the service stops, this will clear the traces stored in the cache.
+		defer closer.Close()
+	}
 
-  // Connect to the server
-  conn, err := grpc.Dial(
-    "localhost:50051",
-    grpc.WithInsecure(),
-    grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
-  )
-  if err != nil {
-    log.Fatalf("Failed to connect: %v", err)
-  }
-  defer conn.Close()
+	unaryTrace, streamTrace := tracer.GrpcRequestTraceOptions()
+	opts := []grpc.DialOption{
+		grpc.WithInsecure(),
+	}
+	if unaryTrace != nil {
+		opts = append(opts, grpc.WithUnaryInterceptor(unaryTrace))
+	}
+	if streamTrace != nil {
+		opts = append(opts, grpc.WithStreamInterceptor(streamTrace))
+	}
 
-  client := pb.NewExampleServiceClient(conn)
+	// Connect to the server
+	conn, err := grpc.Dial(
+		"localhost:50051",
+		opts...,
+	)
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
 
-  // Create a context with a span for tracing
-  tracer := otel.Tracer("client")
-  ctx, span := tracer.Start(context.Background(), "SayHelloRequest")
-  defer span.End()
+	client := pb.NewExampleServiceClient(conn)
 
-  // Log the trace ID from the client
-  log.Printf("Client TraceID: %s", span.SpanContext().TraceID())
+	span, ctx := tracer.StartRpcClientSpan(nil, "callEampleMethod", context.Background())
+	defer span.Finish()
 
-  // Send the gRPC request
-  resp, err := client.SayHello(ctx, &pb.HelloRequest{Name: "OpenTelemetry"})
-  if err != nil {
-    log.Fatalf("Error calling SayHello: %v", err)
-  }
+	// Send the gRPC request
+	resp, err := client.SayHello(ctx, &pb.HelloRequest{Name: "OpenTelemetry"})
 
-  log.Printf("Response from server: %s", resp.Message)
-}
+	log.Printf("Response from server: %s", resp.Message)
 
-func setupTracing() *trace.TracerProvider {
-  exporter, _ := stdouttrace.New(stdouttrace.WithPrettyPrint())
-  return trace.NewTracerProvider(
-    trace.WithBatcher(exporter),
-    trace.WithResource(resource.NewSchemaless()),
-  )
 }
