@@ -41,11 +41,21 @@ func main() {
 
 	client := pb.NewExampleServiceClient(conn)
 
-	span, ctx := tracer.StartRpcClientSpan(nil, "callEampleMethod", context.Background())
+  spn, ctx:= tracer.StartSpan(context.Background(), "callEampleMethod")
+  log.Printf("Root Client TraceID: %s", spn)
+
+	span, ctx := tracer.StartRpcClientSpan(nil, "callEampleMethod", ctx)
+	log.Printf("Client TraceID: %s", span)
 	defer span.Finish()
 
-	// Send the gRPC request
-	resp, err := client.SayHello(ctx, &pb.HelloRequest{Name: "OpenTelemetry"})
+	// Send the gRPC request with the context
+	resp, err := client.SayHello(ctx, &pb.HelloRequest{
+		Name:    "OpenTelemetry",
+	})
+
+	if err != nil {
+		log.Fatalf("Failed to make request: %v", err)
+	}
 
 	log.Printf("Response from server: %s", resp.Message)
 

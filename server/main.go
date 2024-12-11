@@ -18,6 +18,7 @@ type server struct {
 
 func (s *server) SayHello(ctx context.Context, req *pb.HelloRequest) (*pb.HelloResponse, error) {
 	span, ctx := tracer.StartRpcServerSpan(nil, "SayHello", ctx)
+  log.Printf("Server TraceID: %s", span)
 	//span.AddEvent("Processing SayHello")
 	span.SetTag("exampleTag2", "exampleValue2")
 	return &pb.HelloResponse{Message: fmt.Sprintf("Hello, %s!", req.Name)}, nil
